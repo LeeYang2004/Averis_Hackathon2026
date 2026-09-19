@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Upload Documents</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/">Dashboard</a>
+      <a href="/upload" aria-current="page">Upload</a>
+      <a href="/emails">Emails</a>
+      <a href="/documents">Documents</a>
+    </header>
+
+    <main class="page compact-page">
+      <section class="panel">
+        <div class="section-heading">
+          <p class="eyebrow">Upload</p>
+          <h1>Documents</h1>
+        </div>
+
+        {% if error %}
+          <p class="alert">{{ error }}</p>
+        {% endif %}
+
+        <form class="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+          <label>
+            <span>Email JSON</span>
+            <input name="email_json" type="file" accept="application/json,.json" required>
+          </label>
+
+          <label>
+            <span>Shipping Instruction</span>
+            <input name="si_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
+          </label>
+
+          <label>
+            <span>Bill of Lading</span>
+            <input name="bl_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
+          </label>
+
+          <button type="submit">Upload</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

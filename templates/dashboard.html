@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Shipping Document Verification AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" aria-current="page">Dashboard</a>
+      <a href="/upload">Upload</a>
+      <a href="/emails">Emails</a>
+      <a href="/documents">Documents</a>
+    </header>
+
+    <main class="page">
+      <section class="intro">
+        <p class="eyebrow">Averis Project</p>
+        <h1>Shipping Document Verification AI</h1>
+        <div class="actions">
+          <button id="load-data" type="button">Load Bundle Data</button>
+          <a class="button-link" href="/upload">Upload Files</a>
+        </div>
+        <p id="load-status" class="status-line" aria-live="polite"></p>
+      </section>
+
+      <section class="stats" aria-label="Verification metrics">
+        <article>
+          <span>Total emails</span>
+          <strong>{{ stats.total_emails }}</strong>
+        </article>
+        <article>
+          <span>Total documents</span>
+          <strong>{{ stats.total_documents }}</strong>
+        </article>
+        <article>
+          <span>Pending review</span>
+          <strong>{{ stats.pending_review }}</strong>
+        </article>
+        <article>
+          <span>Mismatch detected</span>
+          <strong>{{ stats.mismatch_detected }}</strong>
+        </article>
+        <article>
+          <span>Completed verification</span>
+          <strong>{{ stats.completed_verification }}</strong>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const loadButton = document.querySelector("#load-data");
+      const loadStatus = document.querySelector("#load-status");
+
+      loadButton.addEventListener("click", async () => {
+        loadButton.disabled = true;
+        loadStatus.textContent = "Loading data...";
+
+        try {
+          const response = await fetch("/api/import-input-data", { method: "POST" });
+          if (!response.ok) {
+            throw new Error("Import failed");
+          }
+          const result = await response.json();
+          loadStatus.textContent = `Loaded ${result.emails} emails and ${result.documents} documents.`;
+          window.setTimeout(() => window.location.reload(), 700);
+        } catch (error) {
+          loadStatus.textContent = error.message;
+          loadButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
