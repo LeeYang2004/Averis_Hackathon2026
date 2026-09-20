@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.config import PROJECT_ROOT, get_settings
 from app.database import get_db
 from models.document import Document
-from models.email_message import EmailMessage
+from models.email_message import EmailMessage, utc_now
+from services.email_classifier import EmailClassifier
 from services.input_importer import infer_document_type
 
 
@@ -52,9 +53,11 @@ async def upload_documents(
     attachment_paths = list(email.get("attachments", [])) + saved_paths
     email["attachments"] = attachment_paths
 
-    _upsert_email(db, email)
+    email_record = _upsert_email(db, email)
     for attachment_path in attachment_paths:
         _upsert_document(db, email_id, attachment_path)
+
+    _classify_email(email_record, attachment_paths)
 
     db.commit()
     return RedirectResponse(url=f"/emails/{email_id}", status_code=303)
@@ -113,6 +116,18 @@ def _upsert_email(db: Session, email: dict[str, Any]) -> EmailMessage:
     record.body = email.get("body", "")
     record.attachment_count = len(attachments)
     return record
+
+
+def _classify_email(record: EmailMessage, attachment_paths: list[str]) -> None:
+    result = EmailClassifier().classify(
+        subject=record.subject,
+        body=record.body,
+        attachments=attachment_paths,
+    )
+    record.category = result.category
+    record.classification_confidence = result.confidence
+    record.classification_source = result.source
+    record.classified_at = utc_now()
 
 
 def _upsert_document(db: Session, email_id: str, attachment_path: str) -> Document:

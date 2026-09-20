@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.database import Base, engine, init_db
 from models.document import Document
 from models.email_message import EmailMessage
+from models.email_message import utc_now
+from services.email_classifier import EmailClassifier
 from services.inbox_service import InboxService
 
 
@@ -26,8 +28,13 @@ def reset_database() -> None:
 
 
 class InputDataImporter:
-    def __init__(self, inbox_service: InboxService | None = None) -> None:
+    def __init__(
+        self,
+        inbox_service: InboxService | None = None,
+        email_classifier: EmailClassifier | None = None,
+    ) -> None:
         self.inbox_service = inbox_service or InboxService()
+        self.email_classifier = email_classifier or EmailClassifier()
 
     def import_all(self, db: Session) -> dict[str, int]:
         init_db()
@@ -37,11 +44,13 @@ class InputDataImporter:
 
         for email in self.inbox_service.list_emails():
             email_count += 1
-            self._upsert_email(db, email)
+            email_record = self._upsert_email(db, email)
 
             for attachment_path in email.get("attachments", []):
                 document_count += 1
                 self._upsert_document(db, email["email_id"], attachment_path)
+
+            self._classify_email(email_record, email.get("attachments", []))
 
         db.commit()
         return {"emails": email_count, "documents": document_count}
@@ -63,6 +72,21 @@ class InputDataImporter:
         record.body = email.get("body", "")
         record.attachment_count = len(attachments)
         return record
+
+    def _classify_email(
+        self,
+        record: EmailMessage,
+        attachments: list[str],
+    ) -> None:
+        result = self.email_classifier.classify(
+            subject=record.subject,
+            body=record.body,
+            attachments=attachments,
+        )
+        record.category = result.category
+        record.classification_confidence = result.confidence
+        record.classification_source = result.source
+        record.classified_at = utc_now()
 
     def _upsert_document(
         self,

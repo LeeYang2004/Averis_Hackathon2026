@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import get_settings
@@ -25,6 +25,35 @@ def init_db() -> None:
     import models.verification  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_email_classification_columns()
+
+
+def _ensure_email_classification_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "email_messages" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("email_messages")
+    }
+    migrations = {
+        "category": "ALTER TABLE email_messages ADD COLUMN category VARCHAR(50)",
+        "classification_confidence": (
+            "ALTER TABLE email_messages ADD COLUMN classification_confidence FLOAT"
+        ),
+        "classification_source": (
+            "ALTER TABLE email_messages ADD COLUMN classification_source VARCHAR(50)"
+        ),
+        "classified_at": "ALTER TABLE email_messages ADD COLUMN classified_at DATETIME",
+    }
+
+    with engine.begin() as connection:
+        for column_name, statement in migrations.items():
+            if column_name not in existing_columns:
+                connection.execute(text(statement))
 
 
 def get_db() -> Generator[Session, None, None]:

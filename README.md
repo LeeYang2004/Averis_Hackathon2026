@@ -11,6 +11,29 @@ uvicorn app.main:app --reload
 
 Then open `http://127.0.0.1:8000`.
 
+## Configuration
+
+Application settings are loaded from `.env` in this project folder. The file is
+ignored by git so secrets stay local. Use `.env.example` as the template.
+
+Set your DeepSeek key in `.env`:
+
+```env
+DEEPSEEK_API_KEY="paste-your-key-here"
+```
+
+Supported settings:
+
+- `APP_NAME`
+- `APP_VERSION`
+- `DATABASE_URL`
+- `DATA_SOURCE`
+- `UPLOAD_DIR`
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_BASE_URL`
+- `DEEPSEEK_MODEL`
+- `DEEPSEEK_TIMEOUT_SECONDS`
+
 ## Import the hackathon input data
 
 The root bundle contains `loader.py`, `inbox/`, `attachments/`, and
@@ -20,11 +43,10 @@ The root bundle contains `loader.py`, `inbox/`, `attachments/`, and
 python scripts/import_input_data.py --reset
 ```
 
-Use `DATA_SOURCE` if the bundle lives somewhere else:
+Use `DATA_SOURCE` in `.env` if the bundle lives somewhere else:
 
-```bash
-set DATA_SOURCE=C:\path\to\sdoc-hackathon-bundle
-python scripts/import_input_data.py --reset
+```env
+DATA_SOURCE="C:\path\to\sdoc-hackathon-bundle"
 ```
 
 After importing, check:

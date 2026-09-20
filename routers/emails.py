@@ -18,6 +18,12 @@ def list_emails(db: Session = Depends(get_db)) -> list[dict]:
             "from": email.sender,
             "subject": email.subject,
             "attachment_count": email.attachment_count,
+            "category": email.category,
+            "classification_confidence": email.classification_confidence,
+            "classification_source": email.classification_source,
+            "classified_at": (
+                email.classified_at.isoformat() if email.classified_at else None
+            ),
             "created_at": email.created_at.isoformat(),
         }
         for email in emails
@@ -41,6 +47,10 @@ def get_email(email_id: str, db: Session = Depends(get_db)) -> dict:
         "subject": email.subject,
         "body": email.body,
         "attachment_count": email.attachment_count,
+        "category": email.category,
+        "classification_confidence": email.classification_confidence,
+        "classification_source": email.classification_source,
+        "classified_at": email.classified_at.isoformat() if email.classified_at else None,
         "attachments": [
             {
                 "id": document.id,
