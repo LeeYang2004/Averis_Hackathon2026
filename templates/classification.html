@@ -61,7 +61,21 @@
           {% else %}<p class="muted">No attachments recorded.</p>{% endif %}
         </section>
         {% if selected_category == bl_category %}
-        <section class="detail-section"><h3>Document pipeline</h3><ol class="pipeline-list">{% for stage in pipeline_stages %}<li><span>{{ stage }}</span><small>Pending</small></li>{% endfor %}</ol></section>
+        <section class="detail-section">
+          <h3>Document pipeline</h3>
+          <ol class="pipeline-list">
+            {% for stage in email.pipeline %}
+            <li data-stage="{{ stage.key }}">
+              <span>{{ stage.name }}</span>
+              <small class="{{ 'status success' if stage.status == 'Done' else '' }}">{{ stage.status }}{% if stage.detail %} · {{ stage.detail }}{% endif %}</small>
+            </li>
+            {% endfor %}
+          </ol>
+          <div class="detail-actions">
+            <button class="button secondary" type="button" data-extract-button data-email-id="{{ email.email_id }}"><span>Extract all text</span></button>
+            <p class="notification" data-extract-status role="status" aria-live="polite"></p>
+          </div>
+        </section>
         {% endif %}
         <section class="detail-section"><a class="record-link" href="/inbox/{{ email.email_id | urlencode }}">Open full email <svg aria-hidden="true"><use href="/static/icons.svg#arrow-right"></use></svg></a></section>
       </article>
@@ -106,6 +120,54 @@
       status.textContent = error.message;
       button.disabled = false;
     }
+  });
+
+  function setPipelineStage(article, key, done, detail) {
+    const item = article.querySelector(`li[data-stage="${key}"]`);
+    if (!item) return;
+    const small = item.querySelector("small");
+    if (done) {
+      small.className = "status success";
+      small.textContent = detail ? `Done · ${detail}` : "Done";
+    } else {
+      small.className = "";
+      small.textContent = "Pending";
+    }
+  }
+
+  function updatePipeline(emailId, extractions) {
+    const article = document.querySelector(`[data-email-detail="${emailId}"]`);
+    if (!article) return;
+    const methods = [...new Set((extractions || []).map((item) => item.extraction_method).filter(Boolean))].join(", ");
+    const count = (extractions || []).length;
+    setPipelineStage(article, "attachments", true);
+    setPipelineStage(article, "detection", true);
+    setPipelineStage(article, "extraction", count > 0, methods);
+    setPipelineStage(article, "json", count > 0, count ? `${count} record${count === 1 ? "" : "s"}` : "");
+  }
+
+  document.querySelectorAll("[data-extract-button]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      const emailId = button.dataset.emailId;
+      const status = button.closest(".detail-section").querySelector("[data-extract-status]");
+      const label = button.querySelector("span");
+      button.disabled = true;
+      label.textContent = "Extracting…";
+      if (status) { status.classList.remove("error"); status.textContent = "Extracting attachments…"; }
+      try {
+        const response = await fetch(`/api/extract/${encodeURIComponent(emailId)}`, { method: "POST" });
+        if (!response.ok) throw new Error("Extraction failed. Try again.");
+        const data = await response.json();
+        updatePipeline(emailId, data.extractions);
+        label.textContent = "Extract again";
+        if (status) status.textContent = `Done — ${data.extractions.length} document(s) processed.`;
+      } catch (error) {
+        label.textContent = "Extract all text";
+        if (status) { status.classList.add("error"); status.textContent = error.message; }
+      } finally {
+        button.disabled = false;
+      }
+    });
   });
 </script>
 {% endblock %}

@@ -33,3 +33,7 @@ class Document(Base):
         "Verification",
         back_populates="document",
     )
+    extractions = relationship(
+        "Extraction",
+        back_populates="document",
+    )

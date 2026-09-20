@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from models.document import Document
 from models.email_message import EmailMessage, utc_now
+from models.extraction import Extraction
 from services.email_classifier import EmailClassifier
 from services.classification_workbench import classification_summary
+from services.extraction_service import ExtractionService
 from services.input_importer import InputDataImporter, reset_database
 
 
@@ -65,4 +68,52 @@ def import_input_data(
         "status": "imported",
         "emails": result["emails"],
         "documents": result["documents"],
+    }
+
+
+@router.get("/extractions")
+def list_extractions(db: Session = Depends(get_db)) -> list[dict]:
+    extractions = db.query(Extraction).order_by(Extraction.id).all()
+    return [ExtractionService.serialize(record) for record in extractions]
+
+
+@router.post("/extract/{email_id}")
+def extract_email(email_id: str, db: Session = Depends(get_db)) -> dict:
+    email = (
+        db.query(EmailMessage)
+        .filter(EmailMessage.email_id == email_id)
+        .one_or_none()
+    )
+    if email is None:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    return ExtractionService().process_email(db, email)
+
+
+@router.post("/extract-all")
+def extract_all(db: Session = Depends(get_db)) -> dict[str, int | str | list]:
+    email_ids = (
+        db.query(Document.email_id)
+        .filter(Document.document_type.in_(("SI", "BL")))
+        .distinct()
+        .order_by(Document.email_id)
+        .all()
+    )
+
+    service = ExtractionService()
+    results = []
+    for (email_id,) in email_ids:
+        email = (
+            db.query(EmailMessage)
+            .filter(EmailMessage.email_id == email_id)
+            .one_or_none()
+        )
+        if email is None:
+            continue
+        results.append(service.process_email(db, email))
+
+    return {
+        "status": "extracted",
+        "emails": len(results),
+        "results": results,
     }

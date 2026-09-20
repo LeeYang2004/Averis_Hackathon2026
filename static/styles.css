@@ -127,6 +127,8 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 600; }
 .detail-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .detail-section h3 { margin-bottom: 9px; }
 .detail-section p { margin-bottom: 0; color: #46464c; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.detail-actions .notification { margin: 0; }
 .file-list, .pipeline-list { margin: 0; padding: 0; list-style: none; }
 .file-list li, .pipeline-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 40px; padding: 8px 0; border-top: 1px solid var(--line); }
 .file-list li:first-child, .pipeline-list li:first-child { border-top: 0; }
