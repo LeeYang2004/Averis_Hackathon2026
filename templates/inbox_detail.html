@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ email.email_id }}{% endblock %}
+{% block page_title %}{{ email.email_id }}{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ email.subject or "(No subject)" }}</p>{% endblock %}
+{% block header_actions %}<a class="button secondary" href="/inbox">Back to inbox</a>{% endblock %}
+{% block content %}
+  <div class="record-layout">
+    <article class="card">
+      <div class="panel-head"><h2>{{ email.subject or "(No subject)" }}</h2><span class="status {% if email.category %}success{% else %}warning{% endif %}">{{ email.category.replace("_", " ").title() if email.category else "Unclassified" }}</span></div>
+      <dl class="detail-meta">
+        <div><dt>Sender</dt><dd>{{ email.sender }}</dd></div>
+        <div><dt>Received</dt><dd>{{ email.created_at.strftime("%d %b %Y, %H:%M") if email.created_at else "-" }}</dd></div>
+        <div><dt>Classified</dt><dd>{{ email.classified_at.strftime("%d %b %Y, %H:%M") if email.classified_at else "-" }}</dd></div>
+        <div><dt>Source</dt><dd>{{ email.classification_source or "Unknown" }}</dd></div>
+        <div><dt>Confidence</dt><dd class="tabular">{% if email.classification_confidence is not none %}{{ "%.0f"|format(email.classification_confidence * 100) }}%{% else %}-{% endif %}</dd></div>
+      </dl>
+      <section class="detail-section"><h3>Message</h3><p class="record-body">{{ email.body or "No message body." }}</p></section>
+    </article>
+    <aside class="card"><div class="panel-head"><h2>Attachments</h2><small>{{ email.documents|length }} files</small></div>
+      {% if email.documents %}
+      <ul class="file-list">{% for document in email.documents %}<li><span>{{ document.filename }}</span><small>{{ document.document_type }} · {{ document.status }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="muted">No attachments recorded.</p>{% endif %}
+    </aside>
+  </div>
+{% endblock %}

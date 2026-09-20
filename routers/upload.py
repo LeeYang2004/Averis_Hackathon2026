@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory="templates")
 
 @router.get("/upload", response_class=HTMLResponse)
 def upload_page(request: Request):
-    return templates.TemplateResponse(request, "upload.html", {"error": None})
+    return templates.TemplateResponse(request, "upload.html", {"error": None, "active_page": "upload"})
 
 
 @router.post("/upload")
@@ -39,7 +39,7 @@ async def upload_documents(
         return templates.TemplateResponse(
             request,
             "upload.html",
-            {"error": f"Invalid email JSON: {exc}"},
+            {"error": f"Invalid email JSON: {exc}", "active_page": "upload"},
             status_code=400,
         )
 
@@ -60,7 +60,7 @@ async def upload_documents(
     _classify_email(email_record, attachment_paths)
 
     db.commit()
-    return RedirectResponse(url=f"/emails/{email_id}", status_code=303)
+    return RedirectResponse(url=f"/inbox/{email_id}", status_code=303)
 
 
 async def _read_email_json(upload_file: UploadFile) -> dict[str, Any]:

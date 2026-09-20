@@ -1,49 +1,61 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Upload Documents</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
-  </head>
-  <body>
-    <header class="topbar">
-      <a href="/">Dashboard</a>
-      <a href="/upload" aria-current="page">Upload</a>
-      <a href="/emails">Emails</a>
-      <a href="/documents">Documents</a>
-    </header>
-
-    <main class="page compact-page">
-      <section class="panel">
-        <div class="section-heading">
-          <p class="eyebrow">Upload</p>
-          <h1>Documents</h1>
+{% extends "base.html" %}
+{% block title %}Upload{% endblock %}
+{% block page_title %}Upload files{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">Add an email and its shipping documents</p>{% endblock %}
+{% block content %}
+  <div class="form-column">
+    <div class="card">
+      <div class="panel-head"><h2>Email and attachments</h2></div>
+      <p class="form-intro">Provide the email JSON. Shipping instruction and bill of lading files are optional.</p>
+      {% if error %}<div class="callout error" role="alert">{{ error }}</div>{% endif %}
+      <form class="form-card" id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+        <div class="form-field">
+          <label for="email-json">Email JSON <span class="muted">(required)</span></label>
+          <input id="email-json" name="email_json" type="file" accept="application/json,.json" required>
+          <span class="field-help">Include an email_id and any sender, subject, body, or attachment paths.</span>
         </div>
-
-        {% if error %}
-          <p class="alert">{{ error }}</p>
-        {% endif %}
-
-        <form class="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-          <label>
-            <span>Email JSON</span>
-            <input name="email_json" type="file" accept="application/json,.json" required>
-          </label>
-
-          <label>
-            <span>Shipping Instruction</span>
-            <input name="si_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
-          </label>
-
-          <label>
-            <span>Bill of Lading</span>
-            <input name="bl_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
-          </label>
-
-          <button type="submit">Upload</button>
-        </form>
-      </section>
-    </main>
-  </body>
-</html>
+        <div class="form-field">
+          <label for="si-file">Shipping instruction</label>
+          <input id="si-file" name="si_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
+          <span class="field-help">TXT, PDF, DOCX, or XLSX.</span>
+        </div>
+        <div class="form-field">
+          <label for="bl-file">Bill of lading</label>
+          <input id="bl-file" name="bl_file" type="file" accept=".txt,.pdf,.docx,.xlsx">
+          <span class="field-help">TXT, PDF, DOCX, or XLSX.</span>
+        </div>
+        <div class="form-actions"><button class="button" type="submit"><svg aria-hidden="true"><use href="/static/icons.svg#upload"></use></svg>Upload files</button><a class="button secondary" href="/inbox">Cancel</a></div>
+        <p class="notification" id="upload-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const uploadForm = document.querySelector("#upload-form");
+  uploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = uploadForm.querySelector('[type="submit"]');
+    const status = document.querySelector("#upload-status");
+    submit.disabled = true;
+    status.classList.remove("error");
+    status.textContent = "Uploading files...";
+    try {
+      const response = await fetch(uploadForm.action, { method: "POST", body: new FormData(uploadForm) });
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          const page = new DOMParser().parseFromString(await response.text(), "text/html");
+          throw new Error(page.querySelector(".callout.error")?.textContent?.trim() || "Upload failed. Check the files and try again.");
+        }
+        throw new Error("Upload failed. Check the files and try again.");
+      }
+      window.location.assign(response.url);
+    } catch (error) {
+      status.classList.add("error");
+      status.textContent = error.message;
+      submit.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

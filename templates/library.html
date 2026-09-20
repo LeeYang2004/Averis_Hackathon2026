@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Documents{% endblock %}
+{% block page_title %}Documents{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ documents|length }} files linked to inbox email</p>{% endblock %}
+{% block header_actions %}<a class="button" href="/upload"><svg aria-hidden="true"><use href="/static/icons.svg#upload"></use></svg>Upload files</a>{% endblock %}
+{% block content %}
+  <div class="toolbar">
+    <div class="search-wrap"><svg aria-hidden="true"><use href="/static/icons.svg#search"></use></svg><input class="search-input" id="document-search" type="search" placeholder="Search documents" aria-label="Search documents"></div>
+    <div class="filters"><select id="type-filter" aria-label="Filter by document type"><option value="">All types</option><option value="SI">Shipping instruction</option><option value="BL">Bill of lading</option><option value="OTHER">Other</option></select></div>
+    <span class="muted tabular" id="document-results" aria-live="polite"></span>
+  </div>
+  {% if documents %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th scope="col">Filename</th><th scope="col">Email</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col" class="numeric">Size</th></tr></thead>
+      <tbody>{% for document in documents %}
+        <tr data-filter-row data-type="{{ document.document_type }}" data-search="{{ (document.filename ~ ' ' ~ document.email_id)|lower }}">
+          <td><span class="truncate" title="{{ document.filename }}">{{ document.filename }}</span></td>
+          <td><a class="record-link" href="/inbox/{{ document.email_id | urlencode }}">{{ document.email_id }}</a></td>
+          <td>{{ document.document_type }}</td>
+          <td><span class="status">{{ document.status|title }}</span></td>
+          <td class="numeric">{{ "{:,}".format(document.file_size_bytes) ~ " B" if document.file_size_bytes is not none else "-" }}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+  <div class="card empty-state" id="no-matches" hidden><strong>No matching documents</strong><p>Try a different search or type.</p></div>
+  {% else %}
+  <div class="card empty-state"><strong>No documents yet</strong><p>Files from imported and uploaded email will appear here.</p><a class="button secondary" href="/upload">Upload files</a></div>
+  {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const documentSearch = document.querySelector("#document-search");
+  const typeFilter = document.querySelector("#type-filter");
+  const documentRows = [...document.querySelectorAll("[data-filter-row]")];
+  function filterDocuments() {
+    const query = documentSearch.value.trim().toLowerCase();
+    const type = typeFilter.value;
+    let visible = 0;
+    documentRows.forEach((row) => {
+      const show = row.dataset.search.includes(query) && (!type || row.dataset.type === type || (type === "OTHER" && !["SI", "BL"].includes(row.dataset.type)));
+      row.hidden = !show;
+      if (show) visible++;
+    });
+    document.querySelector("#document-results").textContent = `${visible} shown`;
+    const empty = document.querySelector("#no-matches");
+    if (empty) empty.hidden = visible !== 0;
+  }
+  documentSearch.addEventListener("input", filterDocuments);
+  typeFilter.addEventListener("change", filterDocuments);
+  filterDocuments();
+</script>
+{% endblock %}

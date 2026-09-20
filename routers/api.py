@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from models.email_message import EmailMessage, utc_now
 from services.email_classifier import EmailClassifier
+from services.classification_workbench import classification_summary
 from services.input_importer import InputDataImporter, reset_database
 
 
@@ -13,6 +14,11 @@ router = APIRouter(prefix="/api", tags=["api"])
 @router.get("/status")
 def api_status() -> dict[str, str]:
     return {"status": "ready"}
+
+
+@router.get("/classification-summary")
+def get_classification_summary(db: Session = Depends(get_db)) -> dict:
+    return classification_summary(db)
 
 
 @router.post("/classify-email")

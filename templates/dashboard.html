@@ -1,75 +1,80 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Shipping Document Verification AI</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
-  </head>
-  <body>
-    <header class="topbar">
-      <a href="/" aria-current="page">Dashboard</a>
-      <a href="/upload">Upload</a>
-      <a href="/emails">Emails</a>
-      <a href="/documents">Documents</a>
-    </header>
-
-    <main class="page">
-      <section class="intro">
-        <p class="eyebrow">Averis Project</p>
-        <h1>Shipping Document Verification AI</h1>
-        <div class="actions">
-          <button id="load-data" type="button">Load Bundle Data</button>
-          <a class="button-link" href="/upload">Upload Files</a>
-        </div>
-        <p id="load-status" class="status-line" aria-live="polite"></p>
-      </section>
-
-      <section class="stats" aria-label="Verification metrics">
-        <article>
-          <span>Total emails</span>
-          <strong>{{ stats.total_emails }}</strong>
-        </article>
-        <article>
-          <span>Total documents</span>
-          <strong>{{ stats.total_documents }}</strong>
-        </article>
-        <article>
-          <span>Pending review</span>
-          <strong>{{ stats.pending_review }}</strong>
-        </article>
-        <article>
-          <span>Mismatch detected</span>
-          <strong>{{ stats.mismatch_detected }}</strong>
-        </article>
-        <article>
-          <span>Completed verification</span>
-          <strong>{{ stats.completed_verification }}</strong>
-        </article>
-      </section>
-    </main>
-
-    <script>
-      const loadButton = document.querySelector("#load-data");
-      const loadStatus = document.querySelector("#load-status");
-
-      loadButton.addEventListener("click", async () => {
-        loadButton.disabled = true;
-        loadStatus.textContent = "Loading data...";
-
-        try {
-          const response = await fetch("/api/import-input-data", { method: "POST" });
-          if (!response.ok) {
-            throw new Error("Import failed");
-          }
-          const result = await response.json();
-          loadStatus.textContent = `Loaded ${result.emails} emails and ${result.documents} documents.`;
-          window.setTimeout(() => window.location.reload(), 700);
-        } catch (error) {
-          loadStatus.textContent = error.message;
-          loadButton.disabled = false;
-        }
-      });
-    </script>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block page_title %}Overview{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">Shipping document operations</p>{% endblock %}
+{% block header_actions %}
+  <button class="button secondary" id="load-data" type="button"><svg aria-hidden="true"><use href="/static/icons.svg#refresh-cw"></use></svg>Import inbox</button>
+  <a class="button" href="/upload"><svg aria-hidden="true"><use href="/static/icons.svg#upload"></use></svg>Upload files</a>
+{% endblock %}
+{% block content %}
+  <p class="notification" id="load-status" role="status" aria-live="polite"></p>
+  <section class="section-stack" aria-labelledby="overview-metrics">
+    <div class="section-heading"><div><h2 id="overview-metrics">At a glance</h2><p>Current inbox and verification totals</p></div></div>
+    <div class="metrics">
+      <article class="card metric"><span class="metric-label">Total emails</span><strong class="metric-value">{{ stats.total_emails }}</strong></article>
+      <article class="card metric"><span class="metric-label">Documents</span><strong class="metric-value">{{ stats.total_documents }}</strong></article>
+      <article class="card metric"><span class="metric-label">Pending review</span><strong class="metric-value">{{ stats.pending_review }}</strong></article>
+      <article class="card metric"><span class="metric-label">Mismatches</span><strong class="metric-value">{{ stats.mismatch_detected }}</strong></article>
+      <article class="card metric"><span class="metric-label">Completed</span><strong class="metric-value">{{ stats.completed_verification }}</strong></article>
+    </div>
+  </section>
+  <div class="split-overview">
+    <section class="section-stack" aria-labelledby="recent-heading">
+      <div class="section-heading"><div><h2 id="recent-heading">Recent email</h2><p>Latest items in the inbox</p></div><a class="record-link" href="/inbox">View inbox <svg aria-hidden="true"><use href="/static/icons.svg#arrow-right"></use></svg></a></div>
+      {% if recent_emails %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th scope="col">Email</th><th scope="col">Subject</th><th scope="col">Category</th><th scope="col" class="numeric">Files</th></tr></thead>
+          <tbody>
+          {% for email in recent_emails %}
+            <tr>
+              <td><a class="record-link" href="/inbox/{{ email.email_id | urlencode }}">{{ email.email_id }}</a></td>
+              <td class="subject"><span class="truncate" title="{{ email.subject }}">{{ email.subject or "(No subject)" }}</span></td>
+              <td><span class="status {% if not email.category %}warning{% else %}success{% endif %}">{{ email.category.replace("_", " ").title() if email.category else "Unclassified" }}</span></td>
+              <td class="numeric">{{ email.attachment_count }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card empty-state"><strong>No email imported yet</strong><p>Import the inbox bundle to populate this workspace.</p><button class="button secondary" type="button" data-import-trigger>Import inbox</button></div>
+      {% endif %}
+    </section>
+    <section class="card" aria-labelledby="breakdown-heading">
+      <div class="panel-head"><h2 id="breakdown-heading">Classification</h2><a class="record-link" href="/classification">Review</a></div>
+      <ul class="file-list">
+        {% for category in classification.categories %}
+        <li><a href="/classification?category={{ category.key }}">{{ category.label }}</a><strong class="tabular">{{ category.count }}</strong></li>
+        {% endfor %}
+        {% if classification.needs_classification_count %}
+        <li><span class="status warning">Needs classification</span><strong class="tabular">{{ classification.needs_classification_count }}</strong></li>
+        {% endif %}
+      </ul>
+    </section>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const loadButton = document.querySelector("#load-data");
+  const loadStatus = document.querySelector("#load-status");
+  async function importInbox() {
+    loadButton.disabled = true;
+    loadStatus.classList.remove("error");
+    loadStatus.textContent = "Importing inbox...";
+    try {
+      const response = await fetch("/api/import-input-data", { method: "POST" });
+      if (!response.ok) throw new Error("Import failed. Check the bundle path and try again.");
+      const result = await response.json();
+      loadStatus.textContent = `Imported ${result.emails} emails and ${result.documents} documents.`;
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      loadStatus.classList.add("error");
+      loadStatus.textContent = error.message;
+      loadButton.disabled = false;
+    }
+  }
+  loadButton.addEventListener("click", importInbox);
+  document.querySelector("[data-import-trigger]")?.addEventListener("click", importInbox);
+</script>
+{% endblock %}

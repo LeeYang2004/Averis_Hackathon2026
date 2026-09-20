@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from models.document import Document
 from models.email_message import EmailMessage
 from models.verification import Verification
+from services.classification_workbench import get_classification_view_model
 
 
 router = APIRouter(tags=["dashboard"])
@@ -32,6 +33,13 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         .filter(Verification.reviewer_status == "completed")
         .count()
     )
+    classification = get_classification_view_model(db)
+    recent_emails = (
+        db.query(EmailMessage)
+        .order_by(EmailMessage.created_at.desc())
+        .limit(6)
+        .all()
+    )
 
     return templates.TemplateResponse(
         request,
@@ -44,5 +52,59 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 "mismatch_detected": mismatch_detected,
                 "completed_verification": completed_verification,
             },
+            "classification": classification,
+            "recent_emails": recent_emails,
+            "active_page": "dashboard",
         },
+    )
+
+
+@router.get("/classification", response_class=HTMLResponse)
+def classification_workbench(
+    request: Request,
+    category: str | None = None,
+    db: Session = Depends(get_db),
+):
+    view_model = get_classification_view_model(db, selected_category=category)
+    return templates.TemplateResponse(
+        request,
+        "classification.html",
+        {**view_model, "active_page": "classification"},
+    )
+
+
+@router.get("/inbox", response_class=HTMLResponse)
+def inbox_page(request: Request, db: Session = Depends(get_db)):
+    emails = db.query(EmailMessage).order_by(EmailMessage.created_at.desc()).all()
+    return templates.TemplateResponse(
+        request,
+        "inbox.html",
+        {"emails": emails, "active_page": "inbox"},
+    )
+
+
+@router.get("/inbox/{email_id}", response_class=HTMLResponse)
+def inbox_detail(request: Request, email_id: str, db: Session = Depends(get_db)):
+    email = (
+        db.query(EmailMessage)
+        .options(selectinload(EmailMessage.documents))
+        .filter(EmailMessage.email_id == email_id)
+        .one_or_none()
+    )
+    if email is None:
+        raise HTTPException(status_code=404, detail="Email not found")
+    return templates.TemplateResponse(
+        request,
+        "inbox_detail.html",
+        {"email": email, "active_page": "inbox"},
+    )
+
+
+@router.get("/library", response_class=HTMLResponse)
+def document_library(request: Request, db: Session = Depends(get_db)):
+    documents = db.query(Document).order_by(Document.created_at.desc()).all()
+    return templates.TemplateResponse(
+        request,
+        "library.html",
+        {"documents": documents, "active_page": "library"},
     )

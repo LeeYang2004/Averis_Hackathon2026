@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Classification{% endblock %}
+{% block page_title %}Classification{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ total_classified }} classified of {{ total_emails }} emails</p>{% endblock %}
+{% block header_actions %}
+  <button class="button secondary" id="reclassify" type="button" {% if not total_emails %}disabled{% endif %}><svg aria-hidden="true"><use href="/static/icons.svg#refresh-cw"></use></svg>Rerun classification</button>
+{% endblock %}
+{% block content %}
+  <p class="notification" id="classify-status" role="status" aria-live="polite"></p>
+  {% if needs_classification_count %}
+    <div class="callout" role="alert">
+      <strong>{{ needs_classification_count }} email{{ "" if needs_classification_count == 1 else "s" }} need classification</strong>
+      The AI key is missing or classification is incomplete. Set the key and rerun classification to process these emails.
+    </div>
+  {% endif %}
+  <nav class="category-tabs" aria-label="Email categories">
+    {% for category in categories %}
+      <a href="/classification?category={{ category.key }}" {% if category.key == selected_category %}aria-current="page"{% endif %}>{{ category.label }} <small>{{ category.count }}</small></a>
+    {% endfor %}
+  </nav>
+  <section class="workbench-grid" aria-label="{{ selected_label }} emails">
+    <div class="section-stack">
+      <div class="section-heading"><div><h2>{{ selected_label }}</h2><p>{{ selected_emails|length }} emails · {{ selected_action }}</p></div></div>
+      {% if selected_emails %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th scope="col">Email</th><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col" class="numeric">Files</th><th scope="col" class="numeric">Confidence</th></tr></thead>
+          <tbody>
+            {% for email in selected_emails %}
+            <tr data-email-row="{{ email.email_id }}" {% if loop.first %}class="is-selected"{% endif %}>
+              <td><button class="record-button" type="button" data-email-target="{{ email.email_id }}" aria-pressed="{{ 'true' if loop.first else 'false' }}" aria-label="Show details for {{ email.email_id }}">{{ email.email_id }}</button></td>
+              <td class="subject"><span class="truncate" title="{{ email.subject }}">{{ email.subject or "(No subject)" }}</span></td>
+              <td><span class="truncate" title="{{ email.sender }}">{{ email.sender }}</span></td>
+              <td class="numeric">{{ email.attachment_count }}</td>
+              <td class="numeric">{% if email.classification_confidence is not none %}{{ "%.0f"|format(email.classification_confidence * 100) }}%{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card empty-state"><strong>No {{ selected_label|lower }} emails</strong><p>Choose another category or import inbox data.</p><a class="button secondary" href="/">Go to overview</a></div>
+      {% endif %}
+    </div>
+    <aside class="card detail-panel" aria-label="Email details">
+      {% for email in selected_emails %}
+      <article class="email-detail {% if loop.first %}is-active{% endif %}" data-email-detail="{{ email.email_id }}">
+        <span class="detail-id">{{ email.email_id }}</span>
+        <h2 class="detail-subject">{{ email.subject or "(No subject)" }}</h2>
+        <dl class="detail-meta">
+          <div><dt>Sender</dt><dd>{{ email.sender }}</dd></div>
+          <div><dt>Category</dt><dd>{{ selected_label }}</dd></div>
+          <div><dt>Source</dt><dd>{{ email.classification_source or "Unknown" }}</dd></div>
+          <div><dt>Confidence</dt><dd class="tabular">{% if email.classification_confidence is not none %}{{ "%.0f"|format(email.classification_confidence * 100) }}%{% else %}-{% endif %}</dd></div>
+          <div><dt>Classified</dt><dd>{{ email.classified_at[:16].replace("T", " ") if email.classified_at else "-" }}</dd></div>
+        </dl>
+        <section class="detail-section"><h3>Message preview</h3><p>{{ email.body_preview or "No message body." }}</p></section>
+        <section class="detail-section"><h3>Attachments</h3>
+          {% if email.documents %}
+          <ul class="file-list">{% for document in email.documents %}<li><span>{{ document.filename }}</span><small>{{ document.document_type }} · {{ document.status }}</small></li>{% endfor %}</ul>
+          {% else %}<p class="muted">No attachments recorded.</p>{% endif %}
+        </section>
+        {% if selected_category == bl_category %}
+        <section class="detail-section"><h3>Document pipeline</h3><ol class="pipeline-list">{% for stage in pipeline_stages %}<li><span>{{ stage }}</span><small>Pending</small></li>{% endfor %}</ol></section>
+        {% endif %}
+        <section class="detail-section"><a class="record-link" href="/inbox/{{ email.email_id | urlencode }}">Open full email <svg aria-hidden="true"><use href="/static/icons.svg#arrow-right"></use></svg></a></section>
+      </article>
+      {% else %}
+      <div class="empty-state"><strong>No email selected</strong><p>Emails in this category will appear here.</p></div>
+      {% endfor %}
+    </aside>
+  </section>
+  {% if needs_classification_count %}
+  <section class="section-stack" aria-labelledby="needs-heading">
+    <div class="section-heading"><div><h2 id="needs-heading">Needs classification</h2><p>Items waiting for a valid category</p></div></div>
+    <div class="table-wrap"><table class="data-table">
+      <thead><tr><th scope="col">Email</th><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col">Source</th></tr></thead>
+      <tbody>{% for email in needs_classification %}<tr><td><a class="record-link" href="/inbox/{{ email.email_id | urlencode }}">{{ email.email_id }}</a></td><td class="subject">{{ email.subject }}</td><td>{{ email.sender }}</td><td><span class="status warning">{{ email.classification_source or "Missing" }}</span></td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const rowButtons = document.querySelectorAll("[data-email-target]");
+  rowButtons.forEach((button) => button.addEventListener("click", () => {
+    const target = button.dataset.emailTarget;
+    rowButtons.forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+    document.querySelectorAll("[data-email-row]").forEach((row) => row.classList.toggle("is-selected", row.dataset.emailRow === target));
+    document.querySelectorAll("[data-email-detail]").forEach((detail) => detail.classList.toggle("is-active", detail.dataset.emailDetail === target));
+  }));
+  document.querySelector("#reclassify").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const status = document.querySelector("#classify-status");
+    button.disabled = true;
+    status.classList.remove("error");
+    status.textContent = "Classifying emails...";
+    try {
+      const response = await fetch("/api/classify-imported-emails", { method: "POST" });
+      if (!response.ok) throw new Error("Classification failed. Try again.");
+      const result = await response.json();
+      status.textContent = `Processed ${result.emails} emails.`;
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      status.classList.add("error");
+      status.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

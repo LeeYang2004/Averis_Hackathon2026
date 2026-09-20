@@ -11,8 +11,9 @@ documents, and preparing later SI/BL verification phases.
 - `app/config.py` loads configurable settings from `.env` and environment
   variables. Real environment variables override `.env` values.
 - `app/database.py` owns the SQLAlchemy engine/session setup and table creation.
-- `routers/api.py` contains machine-facing endpoints for import and email
-  classification.
+- `routers/api.py` contains machine-facing endpoints for import, classification,
+  and classification summaries.
+- `GET /classification` is the human workbench for browsing classified emails.
 - `services/email_classifier.py` contains the high-level classification decision
   flow.
 
@@ -29,13 +30,14 @@ Averis_Project/
 │   ├── document.py          Document ORM model for imported/uploaded attachments
 │   └── verification.py      Verification ORM model for later comparison results
 ├── routers/
-│   ├── dashboard.py         HTML dashboard at GET /
+│   ├── dashboard.py         HTML dashboard and classification workbench
 │   ├── upload.py            HTML upload page and upload handling
 │   ├── emails.py            JSON email list/detail endpoints
 │   ├── documents.py         JSON document list endpoint
 │   └── api.py               Import, classify, and reclassify API endpoints
 ├── services/
 │   ├── classification_schema.py  Category constants and ClassificationResult
+│   ├── classification_workbench.py  Grouped data for the classification UI
 │   ├── email_classifier.py       DeepSeek-first classifier plus rule fallback tools
 │   ├── llm_service.py            DeepSeek API integration
 │   ├── input_importer.py         Imports root bundle inbox/attachments into SQLite
@@ -47,6 +49,7 @@ Averis_Project/
 │   └── import_input_data.py      CLI wrapper for importing inbox data
 ├── templates/
 │   ├── dashboard.html       Dashboard UI
+│   ├── classification.html  Classified email workbench
 │   └── upload.html          Upload UI
 ├── static/
 │   └── styles.css           Shared page styling
@@ -118,6 +121,8 @@ Endpoints:
 ```text
 POST /api/classify-email
 POST /api/classify-imported-emails
+GET  /api/classification-summary
+GET  /classification
 ```
 
 Code path:
@@ -137,6 +142,29 @@ routers/api.py
 
 Rule-only behavior is still available through
 `EmailClassifier(prefer_llm=False)` and is covered by tests.
+
+### Classified Email Workbench
+
+Endpoint/UI:
+
+```text
+GET /classification
+GET /classification?category=SI_REQUEST
+```
+
+Code path:
+
+```text
+routers/dashboard.py
+└── get_classification_view_model()
+    └── services/classification_workbench.py
+        ├── groups official categories
+        ├── separates missing-key/null-category emails
+        └── prepares Phase 5-10 placeholder pipeline stages
+```
+
+The default category is `BL_COMPARISON` because it feeds the document
+verification pipeline.
 
 ### Manual Upload Flow
 

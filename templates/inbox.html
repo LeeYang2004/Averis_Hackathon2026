@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block page_title %}Inbox{% endblock %}
+{% block page_subtitle %}<p class="page-subtitle">{{ emails|length }} emails</p>{% endblock %}
+{% block header_actions %}<a class="button" href="/upload"><svg aria-hidden="true"><use href="/static/icons.svg#upload"></use></svg>Upload files</a>{% endblock %}
+{% block content %}
+  <div class="toolbar">
+    <div class="search-wrap"><svg aria-hidden="true"><use href="/static/icons.svg#search"></use></svg><input class="search-input" id="email-search" type="search" placeholder="Search email" aria-label="Search email"></div>
+    <div class="filters"><select id="category-filter" aria-label="Filter by category"><option value="">All categories</option><option value="BL_COMPARISON">BL comparison</option><option value="SI_REQUEST">SI request</option><option value="INVOICE_QUERY">Invoice query</option><option value="GENERAL">General</option><option value="SPAM">Spam</option><option value="unclassified">Unclassified</option></select></div>
+    <span class="muted tabular" id="email-results" aria-live="polite"></span>
+  </div>
+  {% if emails %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th scope="col">Email</th><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col">Category</th><th scope="col" class="numeric">Files</th></tr></thead>
+      <tbody>{% for email in emails %}
+        <tr data-filter-row data-category="{{ email.category or 'unclassified' }}" data-search="{{ (email.email_id ~ ' ' ~ email.subject ~ ' ' ~ email.sender)|lower }}">
+          <td><a class="record-link" href="/inbox/{{ email.email_id | urlencode }}">{{ email.email_id }}</a></td>
+          <td class="subject"><span class="truncate" title="{{ email.subject }}">{{ email.subject or "(No subject)" }}</span></td>
+          <td>{{ email.sender }}</td>
+          <td><span class="status {% if email.category %}success{% else %}warning{% endif %}">{{ email.category.replace("_", " ").title() if email.category else "Unclassified" }}</span></td>
+          <td class="numeric">{{ email.attachment_count }}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+  <div class="card empty-state" id="no-matches" hidden><strong>No matching email</strong><p>Try a different search or category.</p></div>
+  {% else %}
+  <div class="card empty-state"><strong>Inbox is empty</strong><p>Import the bundle or upload an email to begin.</p><a class="button secondary" href="/">Go to overview</a></div>
+  {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const emailSearch = document.querySelector("#email-search");
+  const categoryFilter = document.querySelector("#category-filter");
+  const emailRows = [...document.querySelectorAll("[data-filter-row]")];
+  function filterEmails() {
+    const query = emailSearch.value.trim().toLowerCase();
+    const category = categoryFilter.value;
+    let visible = 0;
+    emailRows.forEach((row) => {
+      const show = row.dataset.search.includes(query) && (!category || row.dataset.category === category);
+      row.hidden = !show;
+      if (show) visible++;
+    });
+    document.querySelector("#email-results").textContent = `${visible} shown`;
+    const empty = document.querySelector("#no-matches");
+    if (empty) empty.hidden = visible !== 0;
+  }
+  emailSearch.addEventListener("input", filterEmails);
+  categoryFilter.addEventListener("change", filterEmails);
+  filterEmails();
+</script>
+{% endblock %}
