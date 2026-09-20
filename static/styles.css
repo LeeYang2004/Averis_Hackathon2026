@@ -134,6 +134,15 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 600; }
 .file-list li:first-child, .pipeline-list li:first-child { border-top: 0; }
 .file-list li span, .pipeline-list li span { min-width: 0; overflow-wrap: anywhere; }
 .file-list small, .pipeline-list small { flex: none; color: var(--muted); font-size: 12px; }
+.file-badges { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.issue-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.issue-list .issue { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.issue-list .issue strong { display: block; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.issue-list .issue p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.issue-list .issue.error { border-color: #f0d1d1; background: #fff9f9; }
+.issue-list .issue.error strong { color: var(--danger); }
+.issue-list .issue.warning { border-color: #eadfc7; background: #fffdf7; }
+.issue-list .issue.warning strong { color: var(--warning); }
 .form-column { width: min(720px, 100%); display: grid; gap: 24px; }
 .form-card { display: grid; gap: 18px; }
 .form-intro { color: var(--muted); margin: 4px 0 0; font-size: 12px; }
@@ -145,6 +154,7 @@ h3 { margin-bottom: 0; font-size: 14px; font-weight: 600; }
 .form-actions { display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
 .field-error { color: var(--danger); font-size: 12px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.search-form { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .search-wrap { position: relative; width: min(320px, 100%); }
 .search-wrap svg { position: absolute; left: 12px; top: 12px; color: var(--muted); }
 .search-input { padding-left: 36px; }

@@ -31,6 +31,10 @@ class Extraction(Base):
     document_type = Column(String(50), nullable=False, index=True)  # "SI" or "BL"
     extraction_method = Column(String(50), nullable=False, index=True)
     fields = Column(JSON, nullable=False, default=dict)
+    status = Column(String(50), nullable=False, default="pending", index=True)
+    detected_document_type = Column(String(50), nullable=True, index=True)
+    errors = Column(JSON, nullable=False, default=list)
+    warnings = Column(JSON, nullable=False, default=list)
     processed_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
 

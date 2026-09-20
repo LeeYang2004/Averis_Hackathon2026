@@ -27,6 +27,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_email_classification_columns()
+    _ensure_extraction_columns()
 
 
 def _ensure_email_classification_columns() -> None:
@@ -49,6 +50,32 @@ def _ensure_email_classification_columns() -> None:
             "ALTER TABLE email_messages ADD COLUMN classification_source VARCHAR(50)"
         ),
         "classified_at": "ALTER TABLE email_messages ADD COLUMN classified_at DATETIME",
+    }
+
+    with engine.begin() as connection:
+        for column_name, statement in migrations.items():
+            if column_name not in existing_columns:
+                connection.execute(text(statement))
+
+
+def _ensure_extraction_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "extractions" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("extractions")
+    }
+    migrations = {
+        "status": "ALTER TABLE extractions ADD COLUMN status VARCHAR(50)",
+        "detected_document_type": (
+            "ALTER TABLE extractions ADD COLUMN detected_document_type VARCHAR(50)"
+        ),
+        "errors": "ALTER TABLE extractions ADD COLUMN errors JSON",
+        "warnings": "ALTER TABLE extractions ADD COLUMN warnings JSON",
     }
 
     with engine.begin() as connection:

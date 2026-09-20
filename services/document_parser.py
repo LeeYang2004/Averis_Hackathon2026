@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import io
 import re
 import zipfile
@@ -78,34 +79,30 @@ DISPLAY_FIELDS = (
 
 SNAKE_FIELDS = tuple(snake for snake, _ in DISPLAY_FIELDS)
 
-FIELD_PATTERNS = {
-    "shipper": re.compile(
-        r"^\s*SHIPPER(?:\s*/\s*EXPORTER)?\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
-    ),
-    "consignee": re.compile(
-        r"^\s*CONSIGNEE(?:\s*\([^)\n]*\))?\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
-    ),
-    "notify_party": re.compile(
-        r"^\s*(?:NOTIFY(?:\s+PARTY)?)\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
-    ),
+# Label matchers for the seven shipment fields. The lookahead keeps a label
+# from matching when it is only a prefix of a longer word (e.g. "POL" inside
+# "POLARIS"). A value may follow the label on the same line, on a later line,
+# with or without a colon, and with or without parenthetical notes.
+FIELD_LABELS = {
+    "shipper": re.compile(r"SHIPPER(?:\s*/\s*EXPORTER)?(?=$|[\s:(])", re.IGNORECASE),
+    "consignee": re.compile(r"CONSIGNEE(?=$|[\s:(])", re.IGNORECASE),
+    "notify_party": re.compile(r"NOTIFY(?:\s+PARTY)?(?=$|[\s:(])", re.IGNORECASE),
     "port_of_loading": re.compile(
-        r"^\s*(?:PORT\s+OF\s+LOADING(?:\s*\(\s*POL\s*\))?|LOAD\s+PORT|POL)\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
+        r"PORT\s+OF\s+LOADING|LOAD\s+PORT|POL(?=$|[\s:(])",
+        re.IGNORECASE,
     ),
     "port_of_discharge": re.compile(
-        r"^\s*(?:PORT\s+OF\s+DISCHARGE|DISCHARGE\s+PORT|POD)\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
+        r"PORT\s+OF\s+DISCHARGE|DISCHARGE\s+PORT|POD(?=$|[\s:(])",
+        re.IGNORECASE,
     ),
     "container_count": re.compile(
-        r"^\s*(?:CONTAINER\s+COUNT|TOTAL\s+CONTAINERS?|NO\.?\s+OF\s+CONTAINERS?(?:\s+OR\s+PACKAGES)?)\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
+        r"CONTAINER\s+COUNT|TOTAL\s+CONTAINERS?|"
+        r"NO\.?\s+OF\s+CONTAINERS?(?:\s+OR\s+PACKAGES)?(?=$|[\s:(])",
+        re.IGNORECASE,
     ),
     "gross_weight_kg": re.compile(
-        r"^\s*GROSS\s+(?:WT|WEIGHT)(?:\s*\(\s*(?:KGS?|KG)\s*\))?\s*:\s*(.+?)\s*$",
-        re.IGNORECASE | re.MULTILINE,
+        r"(?:TOTAL\s+)?GROSS\s+(?:WT|WEIGHT)(?=$|[\s:(])",
+        re.IGNORECASE,
     ),
 }
 
@@ -179,6 +176,36 @@ def _canonical_field_for_label(label: str) -> str | None:
     return None
 
 
+# Ordered content markers for detecting the *semantic* document class from the
+# extracted text. Order matters: invoices are checked first because an invoice
+# footer may literally say "NOT A SHIPPING INSTRUCTION". SI is checked before
+# BL because "BILL OF LADING INSTRUCTION" is an SI document.
+DOCUMENT_CLASS_MARKERS = (
+    ("INVOICE", re.compile(r"(?:COMMERCIAL\s+)?INVOICE", re.IGNORECASE)),
+    (
+        "SI",
+        re.compile(
+            r"SHIPPING\s+INSTRUCTION|BILL\s+OF\s+LADING\s+INSTRUCTION|B/L\s+INSTRUCTION",
+            re.IGNORECASE,
+        ),
+    ),
+    ("BL", re.compile(r"BILL\s+OF\s+LADING(?!\s+INSTRUCTION)", re.IGNORECASE)),
+)
+
+
+def detect_document_class(text: str | None) -> str | None:
+    """Return the semantic class (BL/SI/INVOICE) detected from document text.
+
+    Returns None when the class cannot be determined from the text.
+    """
+    if not text:
+        return None
+    for class_name, pattern in DOCUMENT_CLASS_MARKERS:
+        if pattern.search(text):
+            return class_name
+    return None
+
+
 class DocumentParser:
     """Detects document kind, extracts raw text, and parses shipment fields."""
 
@@ -244,10 +271,22 @@ class DocumentParser:
         if not text:
             return ShipmentFields()
 
+        lines = [line.strip() for line in text.splitlines()]
         values: dict[str, str | None] = {}
-        for snake, pattern in FIELD_PATTERNS.items():
-            match = pattern.search(text)
-            values[snake] = _clean(match.group(1)) if match else None
+
+        for snake, label_pattern in FIELD_LABELS.items():
+            values[snake] = None
+            for index, line in enumerate(lines):
+                match = label_pattern.match(line)
+                if not match:
+                    continue
+
+                value = self._value_from_rest(line[match.end():])
+                if not value:
+                    value = self._value_from_next_lines(lines, index + 1)
+                if value:
+                    values[snake] = value
+                break  # first matching label wins
 
         for line in text.splitlines():
             match = _LABEL_LINE_RE.match(line)
@@ -277,7 +316,46 @@ class DocumentParser:
 
         return ShipmentFields(**fields)
 
-      
+    @staticmethod
+    def _value_from_rest(rest: str) -> str | None:
+        """Extract the value that follows a label on the same line.
+
+        Tolerates an optional colon and leading parenthetical notes such as
+        "(Non-Negotiable)", "(POD)", or "(装货港)" that are part of the label
+        decoration rather than the value itself.
+        """
+        rest = rest.strip()
+        while True:
+            changed = False
+            stripped = re.sub(r"^\s*:\s*", "", rest)
+            if stripped != rest:
+                rest = stripped
+                changed = True
+            stripped = re.sub(r"^\s*\([^)]*\)\s*", "", rest)
+            if stripped != rest:
+                rest = stripped
+                changed = True
+            if not changed:
+                break
+        return _clean(rest) or None
+
+    @staticmethod
+    def _value_from_next_lines(lines: list[str], start: int) -> str | None:
+        """Take the next non-empty line as the value (label-only layouts)."""
+        for line in lines[start:]:
+            if not line:
+                continue
+            if DocumentParser._looks_like_label(line):
+                return None
+            return _clean(line)
+        return None
+
+    @staticmethod
+    def _looks_like_label(line: str) -> bool:
+        return any(
+            pattern.match(line) for pattern in FIELD_LABELS.values()
+        )
+
     def merge_fields(
         self,
         base: ShipmentFields,
@@ -313,13 +391,27 @@ class DocumentParser:
         except (zipfile.BadZipFile, KeyError):
             return ""
 
-        xml = re.sub(r"<w:p[ >]", "\n", xml)
-        xml = re.sub(r"<w:tab[^>]*/>", "\t", xml)
-        return re.sub(r"<[^>]+>", "", xml)
+        xml = re.sub(r"<w:p\b[^>]*>", "\n", xml)
+        xml = re.sub(r"</w:p>", "\n", xml)
+        xml = re.sub(r"<w:br\b[^>]*/>", "\n", xml)
+        xml = re.sub(r"<w:cr\b[^>]*/>", "\n", xml)
+        xml = re.sub(r"<w:tab\b[^>]*/>", "\t", xml)
+        text = re.sub(r"<[^>]+>", "", xml)
+        text = html.unescape(text)
+        text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
 
     @staticmethod
     def _extract_xlsx(data: bytes) -> str:
-        """Best-effort spreadsheet text dump using the standard library."""
+        """Dump spreadsheet rows as "label: value" lines (stdlib only).
+
+        Handles the three OOXML string encodings: inline strings
+        (`t="inlineStr"`), shared strings (`t="s"`), and plain numeric
+        values. Label cells (first column) and value cells (subsequent
+        columns) are joined with ": " so the regular expression field
+        extractor can find them.
+        """
         try:
             archive = zipfile.ZipFile(io.BytesIO(data))
         except zipfile.BadZipFile:
@@ -334,26 +426,61 @@ class DocumentParser:
         except KeyError:
             pass
 
-        parts: list[str] = []
-        try:
-            sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode(
-                "utf-8", errors="replace"
-            )
-            for cell in re.findall(r"<c[^>]*>(.*?)</c>", sheet_xml, re.DOTALL):
-                inline = re.search(r"<v[^>]*>(.*?)</v>", cell, re.DOTALL)
-                if inline is None:
-                    continue
-                raw = inline.group(1).strip()
-                if cell.find('t="s"') != -1:
-                    try:
-                        raw = shared[int(raw)]
-                    except (ValueError, IndexError):
-                        pass
-                parts.append(raw)
-        except KeyError:
-            pass
+        sheet_names = sorted(
+            name
+            for name in archive.namelist()
+            if re.match(r"xl/worksheets/sheet\d+\.xml$", name)
+        )
+        if not sheet_names:
+            return ""
 
-        return "\n".join(parts)
+        sheet_xml = archive.read(sheet_names[0]).decode("utf-8", errors="replace")
+
+        lines: list[str] = []
+        for row_match in re.finditer(r"<row[^>]*>(.*?)</row>", sheet_xml, re.DOTALL):
+            cells: list[tuple[str, str]] = []
+            for cell_match in re.finditer(
+                r"<c\b([^>]*)>(.*?)</c>",
+                row_match.group(1),
+                re.DOTALL,
+            ):
+                attrs = cell_match.group(1)
+                content = cell_match.group(2)
+                ref_match = re.search(r'\br="([A-Z]+)(\d+)"', attrs)
+                type_match = re.search(r'\bt="([^"]+)"', attrs)
+                cell_type = type_match.group(1) if type_match else "n"
+
+                value = ""
+                if cell_type == "inlineStr":
+                    text_match = re.search(r"<t[^>]*>(.*?)</t>", content, re.DOTALL)
+                    if text_match:
+                        value = text_match.group(1)
+                elif cell_type == "s":
+                    num_match = re.search(r"<v[^>]*>(.*?)</v>", content, re.DOTALL)
+                    if num_match:
+                        try:
+                            value = shared[int(num_match.group(1))]
+                        except (ValueError, IndexError):
+                            value = num_match.group(1)
+                else:
+                    num_match = re.search(r"<v[^>]*>(.*?)</v>", content, re.DOTALL)
+                    if num_match:
+                        value = num_match.group(1)
+
+                if ref_match and value.strip():
+                    cells.append((ref_match.group(1), value))
+
+            if not cells:
+                continue
+
+            cells.sort(key=lambda cell: (len(cell[0]), cell[0]))
+            values = [html.unescape(cell[1]).strip() for cell in cells]
+            if len(values) >= 2:
+                lines.append(f"{values[0]}: {' | '.join(values[1:])}")
+            else:
+                lines.append(values[0])
+
+        return "\n".join(lines)
 
     def _extract_pdf(self, data: bytes) -> tuple[str, str]:
         # pdfplumber -> pypdf -> PyMuPDF, then OCR as a last resort.
@@ -362,9 +489,10 @@ class DocumentParser:
             if text:
                 return text, "pdf_text"
 
-        ocr_text = self._extract_image(data)
-        if ocr_text:
-            return ocr_text, "pdf_ocr"
+        if self._ocr_service is not None:
+            ocr_text = self._ocr_service.extract_text_from_bytes(data, "pdf")
+            if ocr_text:
+                return ocr_text, "pdf_ocr"
         return "", "pdf_text"
 
     @staticmethod
@@ -385,7 +513,10 @@ class DocumentParser:
                     page.extract_text() or "" for page in reader.pages
                 )
             if library == "fitz":
-                import fitz
+                try:
+                    import pymupdf as fitz
+                except ImportError:
+                    import fitz
 
                 with fitz.open(stream=data, filetype="pdf") as doc:
                     return "\n".join(page.get_text() for page in doc)
@@ -396,4 +527,4 @@ class DocumentParser:
     def _extract_image(self, data: bytes) -> str:
         if self._ocr_service is None:
             return ""
-        return self._ocr_service.extract_text_from_bytes(data)
+        return self._ocr_service.extract_text_from_bytes(data, "image")

@@ -93,9 +93,20 @@ def build_pipeline_stages(email: EmailMessage) -> list[dict[str, Any]]:
 NEEDS_CLASSIFICATION_KEY = "NEEDS_CLASSIFICATION"
 
 
+def _status_class(status: str | None) -> str | None:
+    if status == "ok":
+        return "success"
+    if status == "error":
+        return "danger"
+    if status == "warning":
+        return "warning"
+    return None
+
+
 def get_classification_view_model(
     db: Session,
     selected_category: str | None = None,
+    search_query: str | None = None,
 ) -> dict[str, Any]:
     emails = (
         db.query(EmailMessage)
@@ -106,12 +117,17 @@ def get_classification_view_model(
         .order_by(EmailMessage.email_id)
         .all()
     )
-    return build_classification_view_model(emails, selected_category)
+    return build_classification_view_model(
+        emails,
+        selected_category,
+        search_query=search_query,
+    )
 
 
 def build_classification_view_model(
     emails: list[EmailMessage],
     selected_category: str | None = None,
+    search_query: str | None = None,
 ) -> dict[str, Any]:
     selected = (
         selected_category
@@ -120,9 +136,13 @@ def build_classification_view_model(
     )
     groups = {category: [] for category in ALLOWED_CATEGORIES}
     needs_classification = []
+    search_results = []
+    query = (search_query or "").strip()
 
     for email in emails:
         item = serialize_email(email)
+        if query and _search_matches(item, query):
+            search_results.append(item)
         if needs_classification_bucket(email):
             needs_classification.append(item)
             continue
@@ -154,6 +174,9 @@ def build_classification_view_model(
         "active_email": selected_emails[0] if selected_emails else None,
         "pipeline_stages": PIPELINE_STAGES,
         "bl_category": BL_COMPARISON,
+        "search_query": search_query,
+        "search_results": search_results,
+        "search_active": bool(query),
     }
 
 
@@ -175,16 +198,75 @@ def needs_classification_bucket(email: EmailMessage) -> bool:
     )
 
 
+def _search_matches(item: dict[str, Any], query: str) -> bool:
+    haystack = " ".join(
+        [
+            str(item.get("email_id") or ""),
+            str(item.get("subject") or ""),
+            str(item.get("sender") or ""),
+            str(item.get("body") or ""),
+            " ".join(
+                str(document.get("filename", ""))
+                for document in item.get("documents", [])
+            ),
+            str(item.get("category") or ""),
+        ]
+    ).casefold()
+    return query.casefold() in haystack
+
+
 def serialize_email(email: EmailMessage) -> dict[str, Any]:
-    documents = [
-        {
-            "id": document.id,
-            "filename": document.filename,
-            "document_type": document.document_type,
-            "status": document.status,
-        }
-        for document in email.documents
-    ]
+    extractions = getattr(email, "extractions", None) or []
+    extraction_by_doc = {
+        extraction.document_id: extraction
+        for extraction in extractions
+        if extraction.document_id is not None
+    }
+
+    documents = []
+    extraction_errors: list[dict[str, Any]] = []
+    extraction_warnings: list[dict[str, Any]] = []
+
+    for document in email.documents:
+        extraction = extraction_by_doc.get(document.id)
+        extraction_status = extraction.status if extraction else None
+
+        documents.append(
+            {
+                "id": document.id,
+                "filename": document.filename,
+                "document_type": document.document_type,
+                "status": document.status,
+                "extraction_status": extraction_status,
+                "extraction_status_class": _status_class(extraction_status),
+                "detected_document_type": (
+                    extraction.detected_document_type if extraction else None
+                ),
+            }
+        )
+
+        if extraction:
+            for error in extraction.errors or []:
+                extraction_errors.append(
+                    {
+                        "filename": document.filename,
+                        "document_type": document.document_type,
+                        "code": error.get("code"),
+                        "detail": error.get("detail"),
+                        "field": error.get("field"),
+                    }
+                )
+            for warning in extraction.warnings or []:
+                extraction_warnings.append(
+                    {
+                        "filename": document.filename,
+                        "document_type": document.document_type,
+                        "code": warning.get("code"),
+                        "detail": warning.get("detail"),
+                        "field": warning.get("field"),
+                    }
+                )
+
     body = email.body or ""
 
     return {
@@ -196,6 +278,7 @@ def serialize_email(email: EmailMessage) -> dict[str, Any]:
         "body_preview": body[:260],
         "attachment_count": email.attachment_count,
         "category": email.category,
+        "category_label": CATEGORY_LABELS.get(email.category),
         "classification_confidence": email.classification_confidence,
         "classification_source": email.classification_source,
         "classified_at": email.classified_at.isoformat() if email.classified_at else None,
@@ -206,4 +289,7 @@ def serialize_email(email: EmailMessage) -> dict[str, Any]:
         )
         or "None",
         "pipeline": build_pipeline_stages(email),
+        "extraction_errors": extraction_errors,
+        "extraction_warnings": extraction_warnings,
+        "has_extraction_issues": bool(extraction_errors or extraction_warnings),
     }

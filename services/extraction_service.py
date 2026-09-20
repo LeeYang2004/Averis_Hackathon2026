@@ -10,6 +10,7 @@ from models.document import Document
 from models.email_message import EmailMessage
 from models.extraction import Extraction, utc_now
 from services.document_parser import DocumentParser, ShipmentFields, snake_to_display
+from services.document_validator import DocumentValidator, ValidationResult
 from services.inbox_service import InboxService
 from services.llm_service import LLMService
 from services.ocr_service import OCRService
@@ -24,8 +25,9 @@ class ExtractionService:
         3. extract raw text (native text, PDF text, or OCR)
         4. parse the seven shipment fields into structured JSON
         5. optionally fill gaps with the DeepSeek LLM
-        6. upsert an Extraction row with a unique id, extraction_method,
-           and processed_at.
+        6. validate the result (wrong format, missing fields, unreadable text)
+        7. upsert an Extraction row with a unique id, extraction_method,
+           status/errors/warnings, and processed_at.
     """
 
     def __init__(
@@ -34,6 +36,7 @@ class ExtractionService:
         parser: DocumentParser | None = None,
         ocr_service: OCRService | None = None,
         llm_service: LLMService | None = None,
+        validator: DocumentValidator | None = None,
     ) -> None:
         self.inbox = inbox_service or InboxService()
         self.ocr = ocr_service or OCRService()
@@ -42,6 +45,7 @@ class ExtractionService:
             ocr_service=self.ocr,
         )
         self.llm = llm_service or LLMService()
+        self.validator = validator or DocumentValidator()
 
     # -- public API -----------------------------------------------------
     def process_email(self, db: Session, email: EmailMessage) -> dict[str, Any]:
@@ -81,7 +85,8 @@ class ExtractionService:
                 fields = self.parser.merge_fields(fields, llm_fields)
                 method = f"{method}+llm"
 
-        return self._upsert(db, email, document, method, fields)
+        validation = self.validator.validate(document.document_type, text, fields)
+        return self._upsert(db, email, document, method, fields, validation)
 
     # -- persistence ----------------------------------------------------
     def _upsert(
@@ -91,6 +96,7 @@ class ExtractionService:
         document: Document,
         method: str,
         fields: ShipmentFields,
+        validation: ValidationResult,
     ) -> Extraction:
         record = (
             db.query(Extraction)
@@ -105,6 +111,10 @@ class ExtractionService:
         record.document_type = document.document_type
         record.extraction_method = method
         record.fields = fields.to_dict()
+        record.status = validation.status
+        record.detected_document_type = validation.detected_document_type
+        record.errors = validation.errors
+        record.warnings = validation.warnings
         record.processed_at = utc_now()
         db.flush()
         return record
@@ -117,7 +127,11 @@ class ExtractionService:
             "email_id": record.email_id,
             "document_id": record.document_id,
             "document_type": record.document_type,
+            "detected_document_type": record.detected_document_type,
             "extraction_method": record.extraction_method,
+            "status": record.status,
+            "errors": record.errors or [],
+            "warnings": record.warnings or [],
             "processed_at": (
                 record.processed_at.isoformat() if record.processed_at else None
             ),
