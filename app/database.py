@@ -22,6 +22,7 @@ Base = declarative_base()
 def init_db() -> None:
     import models.email_message  # noqa: F401
     import models.document  # noqa: F401
+    import models.extraction  # noqa: F401
     import models.verification  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

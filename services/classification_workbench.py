@@ -32,6 +32,64 @@ PIPELINE_STAGES = (
     "Report",
 )
 
+EXTRACTION_PIPELINE_STAGES = (
+    "Attachment Processing",
+    "Document Type Detection",
+    "Text/OCR Extraction",
+    "Structured Shipment JSON",
+)
+
+
+def build_pipeline_stages(email: EmailMessage) -> list[dict[str, Any]]:
+    """Map a single email to the four extraction-pipeline stage statuses."""
+    documents = getattr(email, "documents", None) or []
+    extractions = getattr(email, "extractions", None) or []
+
+    has_documents = bool(documents)
+    has_types = bool(documents) and all(
+        document.document_type and document.document_type != "UNKNOWN"
+        for document in documents
+    )
+    methods = sorted(
+        {
+            extraction.extraction_method
+            for extraction in extractions
+            if extraction.extraction_method
+        }
+    )
+    populated = [extraction for extraction in extractions if extraction.fields]
+    has_extraction = bool(extractions)
+    has_fields = bool(populated)
+
+    return [
+        {
+            "key": "attachments",
+            "name": EXTRACTION_PIPELINE_STAGES[0],
+            "status": "Done" if has_documents else "Pending",
+        },
+        {
+            "key": "detection",
+            "name": EXTRACTION_PIPELINE_STAGES[1],
+            "status": "Done" if has_types else "Pending",
+        },
+        {
+            "key": "extraction",
+            "name": EXTRACTION_PIPELINE_STAGES[2],
+            "status": "Done" if has_extraction else "Pending",
+            "detail": ", ".join(methods) if has_extraction else None,
+        },
+        {
+            "key": "json",
+            "name": EXTRACTION_PIPELINE_STAGES[3],
+            "status": "Done" if has_fields else "Pending",
+            "detail": (
+                f"{len(populated)} record{'' if len(populated) == 1 else 's'}"
+                if has_fields
+                else None
+            ),
+        },
+    ]
+
 NEEDS_CLASSIFICATION_KEY = "NEEDS_CLASSIFICATION"
 
 
@@ -41,7 +99,10 @@ def get_classification_view_model(
 ) -> dict[str, Any]:
     emails = (
         db.query(EmailMessage)
-        .options(selectinload(EmailMessage.documents))
+        .options(
+            selectinload(EmailMessage.documents),
+            selectinload(EmailMessage.extractions),
+        )
         .order_by(EmailMessage.email_id)
         .all()
     )
@@ -144,4 +205,5 @@ def serialize_email(email: EmailMessage) -> dict[str, Any]:
             sorted({document["document_type"] for document in documents})
         )
         or "None",
+        "pipeline": build_pipeline_stages(email),
     }

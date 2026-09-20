@@ -35,3 +35,8 @@ class EmailMessage(Base):
         back_populates="email",
         cascade="all, delete-orphan",
     )
+    extractions = relationship(
+        "Extraction",
+        back_populates="email",
+        cascade="all, delete-orphan",
+    )

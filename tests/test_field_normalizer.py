@@ -163,7 +163,7 @@ class RealDocumentPairIntegrationTests(unittest.TestCase):
         result = self._compare_pair("email_111")
         self.assertEqual(result["status"], "MISMATCH")
         self.assertEqual(result["defect_fields"], ["container_count"])
-        self.assertEqual(result["mismatch_details"]["container_count"], {"si": 4, "bl": 3})
+        self.assertEqual(result["mismatch_details"]["container_count"], {"si": "4", "bl": "3"})
 
     def test_email_128_flags_weight_mismatch_and_port_review(self):
         result = self._compare_pair("email_128")

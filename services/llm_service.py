@@ -28,42 +28,11 @@ class LLMService:
             return None
 
         prompt = self._classification_prompt(subject, body, attachments or [])
-        payload = {
-            "model": self.settings.deepseek_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You classify shipping-document emails. Return strict JSON "
-                        "only and never include markdown."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-        }
-
-        base_url = self.settings.deepseek_base_url.rstrip("/")
-        request = Request(
-            f"{base_url}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.settings.deepseek_api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+        content = self._complete(
+            "You classify shipping-document emails. Return strict JSON "
+            "only and never include markdown.",
+            prompt,
         )
-
-        try:
-            with urlopen(
-                request,
-                timeout=self.settings.deepseek_timeout_seconds,
-            ) as response:
-                response_payload = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
-            return None
-
-        content = self._extract_message_content(response_payload)
         if content is None:
             return None
 
@@ -89,6 +58,74 @@ class LLMService:
             reason=result_payload.get("reason"),
         )
 
+    def extract_shipment_fields(self, text: str) -> dict[str, str] | None:
+        """Ask the LLM to extract structured shipment fields from raw text."""
+        if not self.settings.deepseek_api_key:
+            return None
+
+        content = self._complete(
+            "You extract shipping-document fields. Return strict JSON only "
+            "and never include markdown.",
+            self._fields_prompt(text),
+        )
+        if content is None:
+            return None
+
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+
+        allowed = {
+            "shipper",
+            "consignee",
+            "notify_party",
+            "port_of_loading",
+            "port_of_discharge",
+            "container_count",
+            "gross_weight_kg",
+        }
+        return {
+            key: str(value).strip()
+            for key, value in payload.items()
+            if key in allowed and value not in (None, "")
+        }
+
+    def _complete(self, system: str, user_prompt: str) -> str | None:
+        payload = {
+            "model": self.settings.deepseek_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0,
+        }
+
+        base_url = self.settings.deepseek_base_url.rstrip("/")
+        request = Request(
+            f"{base_url}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.settings.deepseek_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(
+                request,
+                timeout=self.settings.deepseek_timeout_seconds,
+            ) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+            return None
+
+        return self._extract_message_content(response_payload)
+
     def _classification_prompt(
         self,
         subject: str,
@@ -113,6 +150,20 @@ class LLMService:
             f"Subject:\n{subject}\n\n"
             f"Body:\n{body}\n\n"
             f"Attachments:\n{attachment_lines or '- none'}"
+        )
+
+    def _fields_prompt(self, text: str) -> str:
+        return (
+            "Extract the following shipment fields from the document text.\n"
+            "Return a single JSON object with exactly these keys. Use null for "
+            "any field that is not present. Preserve the original casing and "
+            "formatting of values (for example keep '1 x 40\\'HC' and "
+            "'21,577 KG' as they appear).\n\n"
+            "Keys:\n"
+            '{"shipper": null, "consignee": null, "notify_party": null, '
+            '"port_of_loading": null, "port_of_discharge": null, '
+            '"container_count": null, "gross_weight_kg": null}\n\n'
+            f"Document text:\n{text}"
         )
 
     def _extract_message_content(self, response_payload: dict) -> str | None:
