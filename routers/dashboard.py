@@ -63,9 +63,14 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 def classification_workbench(
     request: Request,
     category: str | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
 ):
-    view_model = get_classification_view_model(db, selected_category=category)
+    view_model = get_classification_view_model(
+        db,
+        selected_category=category,
+        search_query=q,
+    )
     return templates.TemplateResponse(
         request,
         "classification.html",
