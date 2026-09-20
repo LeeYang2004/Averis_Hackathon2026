@@ -26,8 +26,16 @@ class EmailClassifier:
     ) -> ClassificationResult:
         rule_result = self.classify_with_rules(subject, body, attachments)
 
-        if not self.prefer_llm or not self.llm_service.is_configured:
+        if not self.prefer_llm:
             return rule_result
+
+        if not self.llm_service.is_configured:
+            return ClassificationResult(
+                category=None,
+                confidence=0.0,
+                source="missing_ai_key",
+                reason="AI key not included",
+            )
 
         llm_result = self.llm_service.classify_email(subject, body, attachments or [])
         if llm_result is not None:

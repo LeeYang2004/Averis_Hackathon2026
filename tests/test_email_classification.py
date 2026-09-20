@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from routers.api import classify_email
+from routers import api as api_router
 from services.classification_schema import (
     ALLOWED_CATEGORIES,
     BL_COMPARISON,
@@ -14,6 +15,13 @@ from services.email_classifier import EmailClassifier
 
 class FailingConfiguredLLM:
     is_configured = True
+
+    def classify_email(self, subject, body, attachments):
+        return None
+
+
+class MissingLLM:
+    is_configured = False
 
     def classify_email(self, subject, body, attachments):
         return None
@@ -74,22 +82,38 @@ class EmailClassifierTests(unittest.TestCase):
         self.assertEqual(result.category, BL_COMPARISON)
         self.assertEqual(result.source, "rules_fallback")
 
+    def test_missing_ai_key_is_reported_explicitly(self):
+        classifier = EmailClassifier(llm_service=MissingLLM())
+        result = classifier.classify(
+            "Invoice query",
+            "Please confirm payment details.",
+            [],
+        )
+
+        self.assertIsNone(result.category)
+        self.assertEqual(result.confidence, 0.0)
+        self.assertEqual(result.source, "missing_ai_key")
+        self.assertEqual(result.reason, "AI key not included")
+
 
 class ClassifyEmailApiHandlerTests(unittest.TestCase):
     def test_api_classify_email_returns_structured_result(self):
-        payload = classify_email(
-            {
-                "subject": "Invoice query",
-                "body": "Please confirm payment details.",
-                "attachments": [],
-            }
-        )
+        with patch(
+            "routers.api.EmailClassifier",
+            return_value=EmailClassifier(llm_service=MissingLLM()),
+        ):
+            payload = api_router.classify_email(
+                {
+                    "subject": "Invoice query",
+                    "body": "Please confirm payment details.",
+                    "attachments": [],
+                }
+            )
 
-        self.assertEqual(payload["category"], INVOICE_QUERY)
-        self.assertIn(payload["category"], ALLOWED_CATEGORIES)
+        self.assertIsNone(payload["category"])
         self.assertIsInstance(payload["confidence"], float)
-        self.assertEqual(payload["source"], "rules")
-        self.assertIn("reason", payload)
+        self.assertEqual(payload["source"], "missing_ai_key")
+        self.assertEqual(payload["reason"], "AI key not included")
 
 
 if __name__ == "__main__":

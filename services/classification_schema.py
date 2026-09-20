@@ -18,7 +18,7 @@ ALLOWED_CATEGORIES = (
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    category: str
+    category: str | None
     confidence: float
     source: str
     reason: str | None = None
