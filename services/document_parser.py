@@ -65,6 +65,57 @@ XLSX_EXTENSIONS = {"xlsx", "xls", "xlsm"}
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "tif", "tiff", "bmp", "webp"}
 
 
+# snake_case key -> human display key used in the expected output.
+DISPLAY_FIELDS = (
+    ("shipper", "Shipper"),
+    ("consignee", "Consignee"),
+    ("notify_party", "Notify Party"),
+    ("port_of_loading", "Port of Loading"),
+    ("port_of_discharge", "Port of Discharge"),
+    ("container_count", "Container Count"),
+    ("gross_weight_kg", "Gross Weight (kg)"),
+)
+
+SNAKE_FIELDS = tuple(snake for snake, _ in DISPLAY_FIELDS)
+
+FIELD_PATTERNS = {
+    "shipper": re.compile(
+        r"^\s*SHIPPER(?:\s*/\s*EXPORTER)?\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "consignee": re.compile(
+        r"^\s*CONSIGNEE(?:\s*\([^)\n]*\))?\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "notify_party": re.compile(
+        r"^\s*(?:NOTIFY(?:\s+PARTY)?)\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "port_of_loading": re.compile(
+        r"^\s*(?:PORT\s+OF\s+LOADING(?:\s*\(\s*POL\s*\))?|LOAD\s+PORT|POL)\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "port_of_discharge": re.compile(
+        r"^\s*(?:PORT\s+OF\s+DISCHARGE|DISCHARGE\s+PORT|POD)\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "container_count": re.compile(
+        r"^\s*(?:CONTAINER\s+COUNT|TOTAL\s+CONTAINERS?|NO\.?\s+OF\s+CONTAINERS?(?:\s+OR\s+PACKAGES)?)\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    "gross_weight_kg": re.compile(
+        r"^\s*GROSS\s+(?:WT|WEIGHT)(?:\s*\(\s*(?:KGS?|KG)\s*\))?\s*:\s*(.+?)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+}
+
+TEXT_EXTENSIONS = {"txt", "text"}
+DOCX_EXTENSIONS = {"docx"}
+PDF_EXTENSIONS = {"pdf"}
+XLSX_EXTENSIONS = {"xlsx", "xls", "xlsm"}
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "tif", "tiff", "bmp", "webp"}
+
+
 class ShipmentFields(BaseModel):
     shipper: str | None = None
     consignee: str | None = None
@@ -99,7 +150,6 @@ def _clean(value: str | None) -> str | None:
         return None
     cleaned = re.sub(r"\s+", " ", value).strip()
     return cleaned or None
-
 
 # A line is a candidate "Label: value" pair only if it doesn't start with
 # whitespace -- address/continuation lines in these documents are always
@@ -186,9 +236,18 @@ class DocumentParser:
             return text, "ocr"
         return self._decode(bytes_data), "unknown"
 
+      
     # -- field parsing --------------------------------------------------
     def parse_text(self, text: str) -> ShipmentFields:
         raw_values: dict[str, str] = {}
+    
+        if not text:
+            return ShipmentFields()
+
+        values: dict[str, str | None] = {}
+        for snake, pattern in FIELD_PATTERNS.items():
+            match = pattern.search(text)
+            values[snake] = _clean(match.group(1)) if match else None
 
         for line in text.splitlines():
             match = _LABEL_LINE_RE.match(line)
@@ -218,6 +277,7 @@ class DocumentParser:
 
         return ShipmentFields(**fields)
 
+      
     def merge_fields(
         self,
         base: ShipmentFields,
